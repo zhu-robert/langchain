@@ -36,6 +36,10 @@ logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from redis.client import Redis as RedisType
+    from redis.commands.search import Search
+    from redis.commands.search.document import Document
+    from redis.commands.search.field import TextField, VectorField
+    from redis.commands.search.indexDefinition import IndexDefinition, IndexType
     from redis.commands.search.query import Query
 
 
@@ -664,3 +668,122 @@ class RedisVectorStoreRetriever(VectorStoreRetriever):
     ) -> List[str]:
         """Add documents to vectorstore."""
         return await self.vectorstore.aadd_documents(documents, **kwargs)
+
+
+class RedisHybridSearch(Redis):
+    """Creates a Redis instance with index adding, text loading, and cosine similarity features."""
+
+    def __init__(
+        self,
+        redis_url: str,
+        index_name: str,
+        embedding_function: Callable,
+        content_key: str = "content",
+        metadata_key: str = "metadata",
+        vector_key: str = "content_vector",
+        relevance_score_fn: Optional[Callable[[float], float]] = None,
+        distance_metric: REDIS_DISTANCE_METRICS = "COSINE",
+        **kwargs: Any,
+    ):
+        super.__init__(self,
+                        redis_url,
+                        index_name,
+                        embedding_function,
+                        content_key,
+                        metadata_key,
+                        vector_key,
+                        relevance_score_fn,
+                        distance_metric,
+                        **kwargs,
+                    )
+        rs = self.client.ft(self.index_name)
+        self.rs = rs
+
+    def _redis_prefix(self, index_name: str) -> str:
+        """Redis key prefix for a given index."""
+        return f"doc:{index_name}"
+
+    def _check_index_exists(self, client: RedisType, index_name: str) -> bool:
+        """Check if Redis index exists."""
+        try:
+            client.ft(index_name).info()
+        except:
+            logger.info("Index does not exist")
+            return False
+        logger.info("Index already exists")
+        return True
+
+    def get_client(self) -> RedisType:
+        return self.client
+
+    def get_rs(self) -> Search:
+        return self.rs
+
+    def create_index(self, dim: int = 1536, field_names=[]) -> list:
+        if not self._check_index_exists(self.client, self.index_name):
+            fields = [TextField(name=field_name) for field_name in field_names]
+            schema = [
+                TextField(name=self.content_key),
+                TextField(name=self.metadata_key),
+                VectorField(
+                    self.vector_key,
+                    "FLAT",
+                    {
+                        "TYPE": "FLOAT32",
+                        "DIM": dim,
+                        "DISTANCE_METRIC": REDIS_DISTANCE_METRICS,
+                    },
+                ),
+            ]
+            schema += fields
+            field_names += [self.content_key, self.metadata_key, self.vector_key]
+            # Create Redis Index
+            self.rs.create_index(
+                fields=schema,
+                definition=IndexDefinition(prefix=["doc:"], index_type=IndexType.HASH),
+            )
+            return field_names
+        return []
+
+    def add_texts_from_df(self, df: pd.DataFrame, mapping: dict, key: str) -> None:
+        """Add text from a dataframe based on the mapping between columns and redis fields.
+
+        df: DataFrame with texts to be added to Redis
+        mapping: Dictionary with keys as names of fields and values as names of the columns
+        key: key for redis data per entry
+        """
+        pipeline = self.client.pipeline()
+        for _, row in df.iterrows():
+            # Use provided values by default or fallback
+            key_val = self._redis_prefix(row[key])
+            mapping_proc = {}
+            for field_name in mapping.keys():
+                if field_name == self.vector_key:
+                    mapping_proc[field_name] = np.array(
+                        row[mapping[field_name]], dtype=np.float32
+                    ).tobytes()
+                else:
+                    mapping_proc[field_name] = row[mapping[field_name]]
+            mapping_proc[self.metadata_key] = json.dumps(
+                row.drop(mapping[self.vector_key]).to_json()
+            )
+            pipeline.hset(key_val, mapping=mapping_proc)
+        pipeline.execute()
+
+    def similarity_search_hybrid(
+        self,
+        return_fields: List[str],
+        text: str,
+        k: int = 5,
+        filters: str = "*",
+    ) -> List[Document]:
+        query = (
+            Query(f"({filters})=>[KNN {k} @content_vector $vector as score]")
+            .sort_by("score")
+            .return_fields(*return_fields)
+            .paging(0, k)
+            .dialect(2)
+        )
+        text_embedding = self.embedding_function(text)
+        query_params = {"vector": text_embedding.tobytes()}
+        return self.rs.search(query, query_params).docs
