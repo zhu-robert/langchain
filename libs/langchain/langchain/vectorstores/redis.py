@@ -20,7 +20,7 @@ from typing import (
 )
 
 import numpy as np
-import pandas as pd
+
 from pydantic_v1 import root_validator
 
 from langchain.callbacks.manager import (
@@ -273,7 +273,7 @@ class Redis(VectorStore):
                     mapping[field_names[key]] = field
             pipeline.hset(
                 key,
-                mapping=mapping
+                mapping={k: v for k, v in mapping.items() if v is not None},
             )
             ids.append(key)
 
