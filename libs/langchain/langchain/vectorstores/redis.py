@@ -20,7 +20,6 @@ from typing import (
 )
 
 import numpy as np
-
 from pydantic_v1 import root_validator
 
 from langchain.callbacks.manager import (
@@ -38,7 +37,6 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from redis.client import Redis as RedisType
     from redis.commands.search import Search
-    from redis.commands.search.document import RedisDocument
     from redis.commands.search.field import TextField, VectorField
     from redis.commands.search.indexDefinition import IndexDefinition, IndexType
     from redis.commands.search.query import Query
@@ -184,7 +182,9 @@ class Redis(VectorStore):
         else:
             return _default_relevance_score
 
-    def _create_index(self, dim: int = 1536, field_names: Optional[Dict[str, str]] = None) -> None:
+    def _create_index(
+        self, dim: int = 1536, field_names: Optional[Dict[str, str]] = None
+    ) -> None:
         try:
             from redis.commands.search.field import TextField, VectorField
             from redis.commands.search.indexDefinition import IndexDefinition, IndexType
@@ -198,7 +198,10 @@ class Redis(VectorStore):
         if not _check_index_exists(self.client, self.index_name):
             # Create additional fields
             if field_names is not None:
-                fields = [TextField(name=field_names[field_name]) for field_name in field_names]
+                fields = [
+                    TextField(name=field_names[field_name])
+                    for field_name in field_names
+                ]
             else:
                 fields = []
             # Define schema
@@ -266,10 +269,10 @@ class Redis(VectorStore):
             metadata = metadatas[i] if metadatas else {}
             embedding = embeddings[i] if embeddings else self.embedding_function(text)
             mapping = {
-                    self.content_key: text,
-                    self.vector_key: np.array(embedding, dtype=np.float32).tobytes(),
-                    self.metadata_key: json.dumps(metadata),
-                }
+                self.content_key: text,
+                self.vector_key: np.array(embedding, dtype=np.float32).tobytes(),
+                self.metadata_key: json.dumps(metadata),
+            }
             if fields is not None and field_names is not None:
                 for col_name, field in fields[i].items():
                     mapping[field_names[col_name]] = field
@@ -330,7 +333,12 @@ class Redis(VectorStore):
         docs_and_scores = self.similarity_search_with_score(query, k=k)
         return [doc for doc, score in docs_and_scores if score < score_threshold]
 
-    def _prepare_query(self, k: int, hybrid_fields: str = '*', addl_return_fields: Optional[List[str]] = None) -> Query:
+    def _prepare_query(
+        self,
+        k: int,
+        hybrid_fields: str = "*",
+        addl_return_fields: Optional[List[str]] = None,
+    ) -> Query:
         try:
             from redis.commands.search.query import Query
         except ImportError:
@@ -343,7 +351,7 @@ class Redis(VectorStore):
             f"{hybrid_fields}=>[KNN {k} @{self.vector_key} $vector AS vector_score]"
         )
         return_fields = [self.metadata_key, self.content_key, "vector_score", "id"]
-        return_fields += (addl_return_fields if addl_return_fields else [])
+        return_fields += addl_return_fields if addl_return_fields else []
         return (
             Query(base_query)
             .return_fields(*return_fields)
@@ -455,7 +463,13 @@ class Redis(VectorStore):
         instance._create_index(dim=len(embeddings[0]), field_names=field_names)
 
         # Add data to Redis
-        keys = instance.add_texts(texts=texts, metadatas=metadatas, fields=fields, field_names=field_names, embeddings=embeddings)
+        keys = instance.add_texts(
+            texts=texts,
+            metadatas=metadatas,
+            fields=fields,
+            field_names=field_names,
+            embeddings=embeddings,
+        )
         return instance, keys
 
     @classmethod
