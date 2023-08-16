@@ -266,7 +266,7 @@ class Redis(VectorStore):
         for i, text in enumerate(texts):
             # Use provided values by default or fallback
             key = keys_or_ids[i] if keys_or_ids else _redis_key(prefix)
-            metadata = metadatas[i] if metadatas else {}
+            metadata = metadatas[i] if metadatas else fields[i]
             embedding = embeddings[i] if embeddings else self.embedding_function(text)
             mapping = {
                 self.content_key: text,
@@ -337,7 +337,6 @@ class Redis(VectorStore):
         self,
         k: int,
         hybrid_fields: str = "*",
-        addl_return_fields: Optional[List[str]] = None,
     ) -> Query:
         try:
             from redis.commands.search.query import Query
@@ -351,7 +350,6 @@ class Redis(VectorStore):
             f"{hybrid_fields}=>[KNN {k} @{self.vector_key} $vector AS vector_score]"
         )
         return_fields = [self.metadata_key, self.content_key, "vector_score", "id"]
-        return_fields += addl_return_fields if addl_return_fields else []
         return (
             Query(base_query)
             .return_fields(*return_fields)
@@ -365,7 +363,6 @@ class Redis(VectorStore):
         query: str,
         filters: str = "*",
         k: int = 4,
-        addl_return_fields: Optional[List[str]] = None,
     ) -> List[Tuple[Document, float]]:
         """Return docs most similar to query.
 
@@ -380,7 +377,7 @@ class Redis(VectorStore):
         embedding = self.embedding_function(query)
 
         # Creates Redis query
-        redis_query = self._prepare_query(k, filters, addl_return_fields)
+        redis_query = self._prepare_query(k, filters)
 
         params_dict: Mapping[str, str] = {
             "vector": np.array(embedding)  # type: ignore
