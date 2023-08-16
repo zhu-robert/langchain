@@ -198,7 +198,9 @@ class Redis(VectorStore):
         if not _check_index_exists(self.client, self.index_name):
             # Create additional fields
             if field_names is not None:
-                fields = [TextField(name=field_name) for field_name in field_names]
+                fields = [TextField(name=field_names[field_name]) for field_name in field_names]
+            else:
+                fields = []
             # Define schema
             schema = [
                 TextField(name=self.content_key),
@@ -269,11 +271,11 @@ class Redis(VectorStore):
                     self.metadata_key: json.dumps(metadata),
                 }
             if fields is not None and field_names is not None:
-                for key, field in fields[i].items():
-                    mapping[field_names[key]] = field
+                for col_name, field in fields[i].items():
+                    mapping[field_names[col_name]] = field
             pipeline.hset(
                 key,
-                mapping={k: v for k, v in mapping.items() if v is not None},
+                mapping=mapping,
             )
             ids.append(key)
 
@@ -341,7 +343,7 @@ class Redis(VectorStore):
             f"{hybrid_fields}=>[KNN {k} @{self.vector_key} $vector AS vector_score]"
         )
         return_fields = [self.metadata_key, self.content_key, "vector_score", "id"]
-        return_fields += addl_return_fields if addl_return_fields else []
+        return_fields += (addl_return_fields if addl_return_fields else [])
         return (
             Query(base_query)
             .return_fields(*return_fields)
@@ -453,7 +455,7 @@ class Redis(VectorStore):
         instance._create_index(dim=len(embeddings[0]), field_names=field_names)
 
         # Add data to Redis
-        keys = instance.add_texts(texts, metadatas, fields, field_names, embeddings)
+        keys = instance.add_texts(texts=texts, metadatas=metadatas, fields=fields, field_names=field_names, embeddings=embeddings)
         return instance, keys
 
     @classmethod
