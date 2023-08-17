@@ -36,9 +36,6 @@ logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from redis.client import Redis as RedisType
-    from redis.commands.search import Search
-    from redis.commands.search.field import TextField, VectorField
-    from redis.commands.search.indexDefinition import IndexDefinition, IndexType
     from redis.commands.search.query import Query
 
 
@@ -197,13 +194,11 @@ class Redis(VectorStore):
         # Check if index exists
         if not _check_index_exists(self.client, self.index_name):
             # Create additional fields
-            if field_names is not None:
-                fields = [
-                    TextField(name=field_names[field_name])
-                    for field_name in field_names
-                ]
-            else:
-                fields = []
+            fields = (
+                [TextField(name=field_names[field_name]) for field_name in field_names]
+                if field_names is not None
+                else []
+            )
             # Define schema
             schema = [
                 TextField(name=self.content_key),
@@ -266,16 +261,17 @@ class Redis(VectorStore):
         for i, text in enumerate(texts):
             # Use provided values by default or fallback
             key = keys_or_ids[i] if keys_or_ids else _redis_key(prefix)
-            metadata = metadatas[i] if metadatas else fields[i]
+            metadata = metadatas[i] if metadatas else {}
             embedding = embeddings[i] if embeddings else self.embedding_function(text)
-            mapping = {
+            mapping: dict = {
                 self.content_key: text,
                 self.vector_key: np.array(embedding, dtype=np.float32).tobytes(),
-                self.metadata_key: json.dumps(metadata),
             }
             if fields is not None and field_names is not None:
                 for col_name, field in fields[i].items():
+                    metadata[col_name] = field
                     mapping[field_names[col_name]] = field
+            mapping[self.metadata_key] = json.dumps(metadata)
             pipeline.hset(
                 key,
                 mapping=mapping,
