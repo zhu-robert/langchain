@@ -12,6 +12,7 @@ TEST_REDIS_URL = "redis://localhost:6379"
 TEST_SINGLE_RESULT = [Document(page_content="foo")]
 TEST_SINGLE_WITH_METADATA_RESULT = [Document(page_content="foo", metadata={"a": "b"})]
 TEST_RESULT = [Document(page_content="foo"), Document(page_content="foo")]
+TEST_RESULT_HYBRID = [Document(page_content='foo', metadata={'name': 'alice', 'type': 'text'}), Document(page_content='baz', metadata={'name': 'chad', 'type': 'text'})]
 COSINE_SCORE = pytest.approx(0.05, abs=0.002)
 IP_SCORE = -8.0
 EUCLIDEAN_SCORE = 1.0
@@ -26,6 +27,16 @@ def drop(index_name: str) -> bool:
 @pytest.fixture
 def texts() -> List[str]:
     return ["foo", "bar", "baz"]
+
+
+@pytest.fixture
+def fields() -> List[dict]:
+    return [{"name": "alice", "type": "text"}, {"name": "bob", "type": "word"}, {"name": "chad", "type": "text"}]
+
+
+@pytest.fixture
+def field_names() -> dict[str, str]:
+    return {'name': 'name', 'type': 'type'}
 
 
 def compare_documents_without_id(lhs: List[Document], rhs: List[Document]) -> bool:
@@ -46,6 +57,14 @@ def test_redis(texts: List[str]) -> None:
     docsearch = Redis.from_texts(texts, FakeEmbeddings(), redis_url=TEST_REDIS_URL)
     output = docsearch.similarity_search("foo", k=1)
     assert compare_documents_without_id(output, TEST_SINGLE_RESULT)
+    assert drop(docsearch.index_name)
+
+
+def test_redis_hybrid(texts: List[str], fields: List[dict], field_names: dict[str, str]) -> None:
+    """Test end to end construction and search with hybrid search."""
+    docsearch = Redis.from_texts(texts, FakeEmbeddings(), redis_url=TEST_REDIS_URL, fields=fields, field_names=field_names)
+    output = docsearch.similarity_search("foo", k=5, filters='@type:"text"')
+    assert compare_documents_without_id(output, TEST_RESULT_HYBRID)
     assert drop(docsearch.index_name)
 
 
