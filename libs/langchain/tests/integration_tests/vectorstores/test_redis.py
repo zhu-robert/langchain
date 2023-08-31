@@ -1,5 +1,5 @@
 """Test Redis functionality."""
-from typing import List
+from typing import List, Dict
 
 import pytest
 
@@ -35,7 +35,7 @@ def fields() -> List[dict]:
 
 
 @pytest.fixture
-def field_names() -> dict[str, str]:
+def field_names() -> Dict[str, str]:
     return {'name': 'name', 'type': 'type'}
 
 
@@ -60,7 +60,7 @@ def test_redis(texts: List[str]) -> None:
     assert drop(docsearch.index_name)
 
 
-def test_redis_hybrid(texts: List[str], fields: List[dict], field_names: dict[str, str]) -> None:
+def test_redis_hybrid(texts: List[str], fields: List[dict], field_names: Dict[str, str]) -> None:
     """Test end to end construction and search with hybrid search."""
     docsearch = Redis.from_texts(texts, FakeEmbeddings(), redis_url=TEST_REDIS_URL, fields=fields, field_names=field_names)
     output = docsearch.similarity_search("foo", k=5, filters='@type:"text"')
