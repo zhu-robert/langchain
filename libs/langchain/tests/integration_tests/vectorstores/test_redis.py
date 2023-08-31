@@ -1,5 +1,5 @@
 """Test Redis functionality."""
-from typing import List
+from typing import Dict, List
 
 import pytest
 
@@ -12,6 +12,10 @@ TEST_REDIS_URL = "redis://localhost:6379"
 TEST_SINGLE_RESULT = [Document(page_content="foo")]
 TEST_SINGLE_WITH_METADATA_RESULT = [Document(page_content="foo", metadata={"a": "b"})]
 TEST_RESULT = [Document(page_content="foo"), Document(page_content="foo")]
+TEST_RESULT_HYBRID = [
+    Document(page_content="foo", metadata={"name": "alice", "type": "text"}),
+    Document(page_content="baz", metadata={"name": "chad", "type": "text"}),
+]
 COSINE_SCORE = pytest.approx(0.05, abs=0.002)
 IP_SCORE = -8.0
 EUCLIDEAN_SCORE = 1.0
@@ -28,11 +32,54 @@ def texts() -> List[str]:
     return ["foo", "bar", "baz"]
 
 
+@pytest.fixture
+def fields() -> List[dict]:
+    return [
+        {"name": "alice", "type": "text"},
+        {"name": "bob", "type": "word"},
+        {"name": "chad", "type": "text"},
+    ]
+
+
+@pytest.fixture
+def field_names() -> Dict[str, str]:
+    return {"name": "name", "type": "type"}
+
+
+def compare_documents_without_id(lhs: List[Document], rhs: List[Document]) -> bool:
+    """Compare two lists of documents without comparing the id in the metadata."""
+    if len(lhs) != len(rhs):
+        return False
+    for left, right in zip(lhs, rhs):
+        if left.page_content != right.page_content:
+            return False
+        for k, v in left.metadata.items():
+            if k != "id" and v != right.metadata[k]:
+                return False
+    return True
+
+
 def test_redis(texts: List[str]) -> None:
     """Test end to end construction and search."""
     docsearch = Redis.from_texts(texts, FakeEmbeddings(), redis_url=TEST_REDIS_URL)
     output = docsearch.similarity_search("foo", k=1)
-    assert output == TEST_SINGLE_RESULT
+    assert compare_documents_without_id(output, TEST_SINGLE_RESULT)
+    assert drop(docsearch.index_name)
+
+
+def test_redis_hybrid(
+    texts: List[str], fields: List[dict], field_names: Dict[str, str]
+) -> None:
+    """Test end to end construction and search with hybrid search."""
+    docsearch = Redis.from_texts(
+        texts,
+        FakeEmbeddings(),
+        redis_url=TEST_REDIS_URL,
+        fields=fields,
+        field_names=field_names,
+    )
+    output = docsearch.similarity_search("foo", k=5, filters='@type:"text"')
+    assert compare_documents_without_id(output, TEST_RESULT_HYBRID)
     assert drop(docsearch.index_name)
 
 
@@ -41,7 +88,7 @@ def test_redis_new_vector(texts: List[str]) -> None:
     docsearch = Redis.from_texts(texts, FakeEmbeddings(), redis_url=TEST_REDIS_URL)
     docsearch.add_texts(["foo"])
     output = docsearch.similarity_search("foo", k=2)
-    assert output == TEST_RESULT
+    assert compare_documents_without_id(output, TEST_RESULT)
     assert drop(docsearch.index_name)
 
 
@@ -55,7 +102,7 @@ def test_redis_from_existing(texts: List[str]) -> None:
         FakeEmbeddings(), index_name=TEST_INDEX_NAME, redis_url=TEST_REDIS_URL
     )
     output = docsearch2.similarity_search("foo", k=1)
-    assert output == TEST_SINGLE_RESULT
+    assert compare_documents_without_id(output, TEST_SINGLE_RESULT)
 
 
 def test_redis_from_texts_return_keys(texts: List[str]) -> None:
@@ -64,7 +111,7 @@ def test_redis_from_texts_return_keys(texts: List[str]) -> None:
         texts, FakeEmbeddings(), redis_url=TEST_REDIS_URL
     )
     output = docsearch.similarity_search("foo", k=1)
-    assert output == TEST_SINGLE_RESULT
+    assert compare_documents_without_id(output, TEST_SINGLE_RESULT)
     assert len(keys) == len(texts)
     assert drop(docsearch.index_name)
 
@@ -74,7 +121,7 @@ def test_redis_from_documents(texts: List[str]) -> None:
     docs = [Document(page_content=t, metadata={"a": "b"}) for t in texts]
     docsearch = Redis.from_documents(docs, FakeEmbeddings(), redis_url=TEST_REDIS_URL)
     output = docsearch.similarity_search("foo", k=1)
-    assert output == TEST_SINGLE_WITH_METADATA_RESULT
+    assert compare_documents_without_id(output, TEST_SINGLE_WITH_METADATA_RESULT)
     assert drop(docsearch.index_name)
 
 
@@ -86,7 +133,7 @@ def test_redis_add_texts_to_existing() -> None:
     )
     docsearch.add_texts(["foo"])
     output = docsearch.similarity_search("foo", k=2)
-    assert output == TEST_RESULT
+    assert compare_documents_without_id(output, TEST_RESULT)
     assert drop(TEST_INDEX_NAME)
 
 
@@ -132,8 +179,8 @@ def test_similarity_search_limit_score(texts: List[str]) -> None:
         texts, FakeEmbeddings(), redis_url=TEST_REDIS_URL, distance_metric="COSINE"
     )
     output = docsearch.similarity_search_limit_score("far", k=2, score_threshold=0.1)
-    assert len(output) == 1
-    _, score = output[0]
+    assert len(output) == 2
+    _, score = output[1]
     assert score == COSINE_SCORE
     assert drop(docsearch.index_name)
 
@@ -146,8 +193,8 @@ def test_similarity_search_with_score_with_limit_score(texts: List[str]) -> None
     output = docsearch.similarity_search_with_relevance_scores(
         "far", k=2, score_threshold=0.1
     )
-    assert len(output) == 1
-    _, score = output[0]
+    assert len(output) == 2
+    _, score = output[1]
     assert score == COSINE_SCORE
     assert drop(docsearch.index_name)
 
@@ -156,6 +203,6 @@ def test_delete(texts: List[str]) -> None:
     """Test deleting a new document"""
     docsearch = Redis.from_texts(texts, FakeEmbeddings(), redis_url=TEST_REDIS_URL)
     ids = docsearch.add_texts(["foo"])
-    got = docsearch.delete(ids=ids)
+    got = docsearch.delete(ids=ids, redis_url=TEST_REDIS_URL)
     assert got
     assert drop(docsearch.index_name)

@@ -359,7 +359,7 @@ class RedisSemanticCache(BaseCache):
             score_threshold=self.score_threshold,
         )
         if results:
-            for document in results:
+            for document, _ in results:
                 for text in document.metadata["return_val"]:
                     generations.append(Generation(text=text))
         return generations if generations else None
