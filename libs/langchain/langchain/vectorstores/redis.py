@@ -306,7 +306,12 @@ class Redis(VectorStore):
         return [doc for doc, _ in docs_and_scores]
 
     def similarity_search_with_relevance_scores(
-        self, query: str, k: int = 4, score_threshold: float = 0.2, filters: str = "*", **kwargs: Any
+        self,
+        query: str,
+        k: int = 4,
+        score_threshold: float = 0.2,
+        filters: str = "*",
+        **kwargs: Any,
     ) -> List[Tuple[Document, float]]:
         """
         Returns the most similar indexed documents to the query text within the
@@ -330,10 +335,17 @@ class Redis(VectorStore):
 
         """
         docs_and_scores = self.similarity_search_with_score(query, k=k, filters=filters)
-        return [(doc, score) for doc, score in docs_and_scores if score < score_threshold]
-    
+        return [
+            (doc, score) for doc, score in docs_and_scores if score < score_threshold
+        ]
+
     def similarity_search_limit_score(
-            self, query: str, k: int = 4, score_threshold: float = 0.2, filters: str = "*", **kwargs: Any
+        self,
+        query: str,
+        k: int = 4,
+        score_threshold: float = 0.2,
+        filters: str = "*",
+        **kwargs: Any,
     ) -> List[Tuple[Document, float]]:
         """
         Returns the most similar indexed documents to the query text within the
@@ -711,9 +723,12 @@ class RedisVectorStoreRetriever(VectorStoreRetriever):
         if self.search_type == "similarity":
             docs = self.vectorstore.similarity_search(query, k=self.k)
         elif self.search_type == "similarity_limit":
-            docs = [each[0] for each in self.vectorstore.similarity_search_limit_score(
-                query, k=self.k, score_threshold=self.score_threshold
-            )]
+            docs = [
+                each[0]
+                for each in self.vectorstore.similarity_search_limit_score(
+                    query, k=self.k, score_threshold=self.score_threshold
+                )
+            ]
         else:
             raise ValueError(f"search_type of {self.search_type} not allowed.")
         return docs

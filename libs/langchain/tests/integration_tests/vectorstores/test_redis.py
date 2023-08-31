@@ -1,5 +1,5 @@
 """Test Redis functionality."""
-from typing import List
+from typing import Dict, List
 
 import pytest
 
@@ -12,6 +12,10 @@ TEST_REDIS_URL = "redis://localhost:6379"
 TEST_SINGLE_RESULT = [Document(page_content="foo")]
 TEST_SINGLE_WITH_METADATA_RESULT = [Document(page_content="foo", metadata={"a": "b"})]
 TEST_RESULT = [Document(page_content="foo"), Document(page_content="foo")]
+TEST_RESULT_HYBRID = [
+    Document(page_content="foo", metadata={"name": "alice", "type": "text"}),
+    Document(page_content="baz", metadata={"name": "chad", "type": "text"}),
+]
 COSINE_SCORE = pytest.approx(0.05, abs=0.002)
 IP_SCORE = -8.0
 EUCLIDEAN_SCORE = 1.0
@@ -28,15 +32,29 @@ def texts() -> List[str]:
     return ["foo", "bar", "baz"]
 
 
+@pytest.fixture
+def fields() -> List[dict]:
+    return [
+        {"name": "alice", "type": "text"},
+        {"name": "bob", "type": "word"},
+        {"name": "chad", "type": "text"},
+    ]
+
+
+@pytest.fixture
+def field_names() -> Dict[str, str]:
+    return {"name": "name", "type": "type"}
+
+
 def compare_documents_without_id(lhs: List[Document], rhs: List[Document]) -> bool:
     """Compare two lists of documents without comparing the id in the metadata."""
     if len(lhs) != len(rhs):
         return False
-    for l, r in zip(lhs, rhs):
-        if l.page_content != r.page_content:
+    for left, right in zip(lhs, rhs):
+        if left.page_content != right.page_content:
             return False
-        for k, v in l.metadata.items():
-            if k != "id" and v != r.metadata[k]:
+        for k, v in left.metadata.items():
+            if k != "id" and v != right.metadata[k]:
                 return False
     return True
 
@@ -46,6 +64,22 @@ def test_redis(texts: List[str]) -> None:
     docsearch = Redis.from_texts(texts, FakeEmbeddings(), redis_url=TEST_REDIS_URL)
     output = docsearch.similarity_search("foo", k=1)
     assert compare_documents_without_id(output, TEST_SINGLE_RESULT)
+    assert drop(docsearch.index_name)
+
+
+def test_redis_hybrid(
+    texts: List[str], fields: List[dict], field_names: Dict[str, str]
+) -> None:
+    """Test end to end construction and search with hybrid search."""
+    docsearch = Redis.from_texts(
+        texts,
+        FakeEmbeddings(),
+        redis_url=TEST_REDIS_URL,
+        fields=fields,
+        field_names=field_names,
+    )
+    output = docsearch.similarity_search("foo", k=5, filters='@type:"text"')
+    assert compare_documents_without_id(output, TEST_RESULT_HYBRID)
     assert drop(docsearch.index_name)
 
 
