@@ -226,10 +226,10 @@ class Redis(VectorStore):
         self,
         texts: Iterable[str],
         metadatas: Optional[List[dict]] = None,
-        fields: Optional[List[dict]] = None,
-        field_names: Optional[dict[str, str]] = None,
         embeddings: Optional[List[List[float]]] = None,
         batch_size: int = 1000,
+        fields: Optional[List[dict]] = None,
+        field_names: Optional[dict[str, str]] = None,
         **kwargs: Any,
     ) -> List[str]:
         """Add more texts to the vectorstore.
@@ -289,7 +289,7 @@ class Redis(VectorStore):
         return ids
 
     def similarity_search(
-        self, query: str, filters: str = "*", k: int = 4, **kwargs: Any
+        self, query: str, k: int = 4, filters: str = "*", **kwargs: Any
     ) -> List[Document]:
         """
         Returns the most similar indexed documents to the query text.
@@ -305,9 +305,9 @@ class Redis(VectorStore):
         docs_and_scores = self.similarity_search_with_score(query, filters=filters, k=k)
         return [doc for doc, _ in docs_and_scores]
 
-    def similarity_search_limit_score(
-        self, query: str, k: int = 4, score_threshold: float = 0.2, **kwargs: Any
-    ) -> List[Document]:
+    def similarity_search_with_relevance_scores(
+        self, query: str, k: int = 4, score_threshold: float = 0.2, filters: str = "*", **kwargs: Any
+    ) -> List[Tuple[Document, float]]:
         """
         Returns the most similar indexed documents to the query text within the
         score_threshold range.
@@ -329,8 +329,36 @@ class Redis(VectorStore):
             an empty list is returned.
 
         """
-        docs_and_scores = self.similarity_search_with_score(query, k=k)
-        return [doc for doc, score in docs_and_scores if score < score_threshold]
+        docs_and_scores = self.similarity_search_with_score(query, k=k, filters=filters)
+        return [(doc, score) for doc, score in docs_and_scores if score < score_threshold]
+    
+    def similarity_search_limit_score(
+            self, query: str, k: int = 4, score_threshold: float = 0.2, filters: str = "*", **kwargs: Any
+    ) -> List[Tuple[Document, float]]:
+        """
+        Returns the most similar indexed documents to the query text within the
+        score_threshold range.
+
+        Args:
+            query (str): The query text for which to find similar documents.
+            k (int): The number of documents to return. Default is 4.
+            score_threshold (float): The minimum matching score required for a document
+                to be considered a match. Defaults to 0.2.
+                Because the similarity calculation algorithm is based on cosine
+                similarity, the smaller the angle, the higher the similarity.
+
+        Returns:
+            List[Document]: A list of documents that are most similar to the query text,
+                including the match score for each document.
+
+        Note:
+            If there are no documents that satisfy the score_threshold value,
+            an empty list is returned.
+
+        """
+        return self.similarity_search_with_relevance_scores(
+            query, k, score_threshold, filters, **kwargs
+        )
 
     def _prepare_query(
         self,
@@ -360,8 +388,8 @@ class Redis(VectorStore):
     def similarity_search_with_score(
         self,
         query: str,
-        filters: str = "*",
         k: int = 4,
+        filters: str = "*",
     ) -> List[Tuple[Document, float]]:
         """Return docs most similar to query.
 
@@ -402,13 +430,13 @@ class Redis(VectorStore):
         texts: List[str],
         embedding: Embeddings,
         metadatas: Optional[List[dict]] = None,
-        fields: Optional[List[dict]] = None,
-        field_names: Optional[dict[str, str]] = None,
         index_name: Optional[str] = None,
         content_key: str = "content",
         metadata_key: str = "metadata",
         vector_key: str = "content_vector",
         distance_metric: REDIS_DISTANCE_METRICS = "COSINE",
+        fields: Optional[List[dict]] = None,
+        field_names: Optional[dict[str, str]] = None,
         **kwargs: Any,
     ) -> Tuple[Redis, List[str]]:
         """Create a Redis vectorstore from raw documents.
@@ -475,12 +503,12 @@ class Redis(VectorStore):
         texts: List[str],
         embedding: Embeddings,
         metadatas: Optional[List[dict]] = None,
-        fields: Optional[List[dict]] = None,
-        field_names: Optional[dict[str, str]] = None,
         index_name: Optional[str] = None,
         content_key: str = "content",
         metadata_key: str = "metadata",
         vector_key: str = "content_vector",
+        fields: Optional[List[dict]] = None,
+        field_names: Optional[dict[str, str]] = None,
         **kwargs: Any,
     ) -> Redis:
         """Create a Redis vectorstore from raw documents.
