@@ -240,6 +240,8 @@ class Redis(VectorStore):
                 Defaults to None.
             fields (Optional[List[List[dict]]], optional): Optional list of
                 additional fields. Defaults to None.
+            field_names (Optional[dict[str, str]], optional): Optional mapping of
+                field names to use in the index. Defaults to None.
             embeddings (Optional[List[List[float]]], optional): Optional pre-generated
                 embeddings. Defaults to None.
             keys (List[str]) or ids (List[str]): Identifiers of entries.
@@ -287,19 +289,20 @@ class Redis(VectorStore):
         return ids
 
     def similarity_search(
-        self, query: str, k: int = 4, **kwargs: Any
+        self, query: str, filters: str = "*", k: int = 4, **kwargs: Any
     ) -> List[Document]:
         """
         Returns the most similar indexed documents to the query text.
 
         Args:
             query (str): The query text for which to find similar documents.
+            filters (str): A filter query to apply to the search. Defaults to "*".
             k (int): The number of documents to return. Default is 4.
 
         Returns:
             List[Document]: A list of documents that are most similar to the query text.
         """
-        docs_and_scores = self.similarity_search_with_score(query, k=k)
+        docs_and_scores = self.similarity_search_with_score(query, filters=filters, k=k)
         return [doc for doc, _ in docs_and_scores]
 
     def similarity_search_limit_score(
@@ -364,6 +367,7 @@ class Redis(VectorStore):
 
         Args:
             query: Text to look up documents similar to.
+            filters: Filter to apply to search. Defaults to "*".
             k: Number of Documents to return. Defaults to 4.
 
         Returns:
