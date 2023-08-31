@@ -711,9 +711,9 @@ class RedisVectorStoreRetriever(VectorStoreRetriever):
         if self.search_type == "similarity":
             docs = self.vectorstore.similarity_search(query, k=self.k)
         elif self.search_type == "similarity_limit":
-            docs = self.vectorstore.similarity_search_limit_score(
+            docs = [each[0] for each in self.vectorstore.similarity_search_limit_score(
                 query, k=self.k, score_threshold=self.score_threshold
-            )
+            )]
         else:
             raise ValueError(f"search_type of {self.search_type} not allowed.")
         return docs
